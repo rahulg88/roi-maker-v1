@@ -142,11 +142,33 @@ export default function DrawCanvas({
           position: 'absolute', inset: 0,
           display: 'flex', flexDirection: 'column',
           alignItems: 'center', justifyContent: 'center',
-          color: 'rgba(255,255,255,0.2)', gap: 1.5,
           pointerEvents: 'none',
+          gap: 1.5,
         }}>
-          <ImageIcon sx={{ fontSize: 52, opacity: 0.3 }} />
-          <Box sx={{ fontSize: '0.82rem' }}>Upload an image to begin drawing zones</Box>
+          <Box
+            component="img"
+            src="/placeholder.jpg"
+            alt="Upload placeholder"
+            sx={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              opacity: 0.35,
+              position: 'absolute',
+              inset: 0,
+            }}
+          />
+          <Box sx={{
+            position: 'relative', zIndex: 1,
+            display: 'flex', flexDirection: 'column',
+            alignItems: 'center', gap: 1.5,
+            color: 'rgba(255,255,255,0.7)',
+          }}>
+            <ImageIcon sx={{ fontSize: 52, opacity: 0.8 }} />
+            <Box sx={{ fontSize: '0.82rem', fontWeight: 500 }}>
+              Upload an image to begin drawing zones
+            </Box>
+          </Box>
         </Box>
       )}
     </Box>

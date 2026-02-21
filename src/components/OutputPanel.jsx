@@ -13,8 +13,8 @@ import { PEOPLE_LABELS, PEOPLE_COLORS } from '../utils/drawUtils';
 
 export default function OutputPanel({ mode, roiState, peopleState, onDeleteRoi }) {
   const [copied,     setCopied]     = useState(false);
-  const [roiFmt,     setRoiFmt]     = useState('json');      // 'json' | 'flat'
-  const [peopleFmt,  setPeopleFmt]  = useState('standard');  // 'standard' | 'combined'
+  const [roiFmt,     setRoiFmt]     = useState('json');
+  const [peopleFmt,  setPeopleFmt]  = useState('standard');
 
   const output = buildOutput(mode, roiState, peopleState, roiFmt, peopleFmt);
 
@@ -210,13 +210,13 @@ export default function OutputPanel({ mode, roiState, peopleState, onDeleteRoi }
           <FormatBadge mode={mode} roiFmt={roiFmt} peopleFmt={peopleFmt} />
         )}
 
-        {/* Output box */}
+        {/* Output box — fontSize bumped from 0.69rem → 0.85rem */}
         <Box sx={{
           bgcolor: '#05080f',
           border: '1px solid rgba(255,255,255,0.06)',
           borderRadius: 2, p: 1.75,
           fontFamily: '"JetBrains Mono", monospace',
-          fontSize: '0.69rem',
+          fontSize: '0.85rem',                          // ← increased
           color: output ? '#69f0ae' : 'rgba(255,255,255,0.15)',
           minHeight: 80,
           maxHeight: 220,
@@ -249,7 +249,7 @@ function FormatBadge({ mode, roiFmt, peopleFmt }) {
       label = '{"x": int, "y": int} per point';
     } else {
       color = '#ffab40'; bg = 'rgba(255,171,64,0.1)'; border = 'rgba(255,171,64,0.25)';
-      label = '[x, y, x, y, …] flat integers';
+      label = '[x; y; x; y; …] flat integers';          // ← updated label
     }
   } else {
     if (peopleFmt === 'standard') {
@@ -280,7 +280,7 @@ function buildOutput(mode, roiState, peopleState, roiFmt, peopleFmt) {
     return roiState.polygons.map(poly => {
       if (roiFmt === 'flat') {
         const nums = poly.points.flatMap(p => [Math.round(p.x), Math.round(p.y)]);
-        return '[' + nums.join(',') + ']';
+        return '[' + nums.join(';') + ']';              // ← semicolon separator
       }
       return '[' + poly.points.map(p => `{"x":${Math.round(p.x)},"y":${Math.round(p.y)}}`).join(',') + ']';
     }).join('\n');
@@ -291,7 +291,6 @@ function buildOutput(mode, roiState, peopleState, roiFmt, peopleFmt) {
   if (!lines.some(Boolean)) return '';
 
   if (peopleFmt === 'standard') {
-    // Standard: Main + Entry + Exit as separate lines
     return lines.map((line, i) => {
       if (!line) return null;
       const pts = line.pts.map(p => `${Math.round(p._ix)};${Math.round(p._iy)}`).join(';');
@@ -299,16 +298,11 @@ function buildOutput(mode, roiState, peopleState, roiFmt, peopleFmt) {
     }).filter(Boolean).join('\n');
   }
 
-  // Combined format:
-  // line-crossing-Entry = Entry_pts + Main_pts (in order)
-  // line-crossing-Exit  = Exit_pts  + Main_pts (reversed)
-  // Requires all 3 lines to be drawn
   const mainLine  = lines[0];
   const entryLine = lines[1];
   const exitLine  = lines[2];
 
   if (!mainLine || !entryLine || !exitLine) {
-    // Show what we have in standard, note that combined needs all 3
     const parts = lines.map((line, i) => {
       if (!line) return null;
       const pts = line.pts.map(p => `${Math.round(p._ix)};${Math.round(p._iy)}`).join(';');
@@ -321,7 +315,6 @@ function buildOutput(mode, roiState, peopleState, roiFmt, peopleFmt) {
   const entryPts = entryLine.pts.map(p => `${Math.round(p._ix)};${Math.round(p._iy)}`);
   const exitPts  = exitLine.pts.map(p  => `${Math.round(p._ix)};${Math.round(p._iy)}`);
 
-  // Main reversed for exit (exit direction is opposite to entry along main)
   const mainPtsReversed = [...mainPts].reverse();
 
   const entryCombined = [...entryPts, ...mainPts].join(';');

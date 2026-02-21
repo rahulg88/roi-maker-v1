@@ -1,7 +1,8 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useMemo } from 'react';
 import {
   Box, Paper, Typography, Button, Stack,
   Snackbar, Alert, Tooltip, useMediaQuery, useTheme,
+  ThemeProvider, createTheme, CssBaseline,
 } from '@mui/material';
 import UndoIcon from '@mui/icons-material/Undo';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
@@ -9,6 +10,7 @@ import GestureIcon from '@mui/icons-material/Gesture';
 import PeopleAltOutlinedIcon from '@mui/icons-material/PeopleAltOutlined';
 import KeyboardIcon from '@mui/icons-material/KeyboardOutlined';
 
+import DarkModeToggle from './DarkModeToggle';
 import DrawCanvas from './DrawCanvas';
 import ImageSourcePanel from './ImageSourcePanel';
 import OutputPanel from './OutputPanel';
@@ -18,12 +20,10 @@ import { ROI_COLORS, PEOPLE_COLORS, segmentsIntersect, toImgCoord } from '../uti
 const INITIAL_ROI    = { polygons: [], current: [], nextId: 1 };
 const INITIAL_PEOPLE = { lines: [], currentPts: [], step: 0 };
 
-// Rescale a single {x, y} point when output dimensions change
 function rescalePoint(p, scaleX, scaleY) {
   return { ...p, x: Math.round(p.x * scaleX * 2) / 2, y: Math.round(p.y * scaleY * 2) / 2 };
 }
 
-// Rescale a people point {_ix, _iy, cx, cy} — only output coords, canvas coords stay
 function rescalePeoplePoint(p, scaleX, scaleY) {
   return {
     ...p,
@@ -57,17 +57,15 @@ function ModeButton({ id, label, Icon, active, onClick }) {
   );
 }
 
-export default function ZoneDrawingTool() {
+// ── Inner tool (consumes theme) ──────────────────────────────────────────────
+function ZoneDrawingToolInner({ darkMode, onToggleDarkMode }) {
   const theme    = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
   const imgRef = useRef(null);
 
-  // imgNatW/H = the OUTPUT coordinate space (what coords are mapped to)
   const [imgNatW, setImgNatW] = useState(1280);
   const [imgNatH, setImgNatH] = useState(720);
-
-  // Keep a ref of PREVIOUS dimensions so we can rescale on change
   const prevDims = useRef({ w: 1280, h: 720 });
 
   const [mode,        setMode]        = useState('roi');
@@ -77,7 +75,6 @@ export default function ZoneDrawingTool() {
   const [, tick] = useState(0);
   const redraw = () => tick(n => n + 1);
 
-  // ── Image loaded ────────────────────────────────────────────────────────────
   function handleImageLoaded(img) {
     imgRef.current = img;
     const w = img.naturalWidth;
@@ -88,51 +85,38 @@ export default function ZoneDrawingTool() {
     clearAll();
   }
 
-  // ── Dimension change: rescale all stored coordinates ────────────────────────
   function handleDimensionChange(axis, val) {
     const oldW = prevDims.current.w;
     const oldH = prevDims.current.h;
-
     const newW = axis === 'width'  ? val : oldW;
     const newH = axis === 'height' ? val : oldH;
-
     const scaleX = newW / oldW;
     const scaleY = newH / oldH;
 
-    // Rescale ROI polygons
     setRoiState(prev => ({
       ...prev,
       polygons: prev.polygons.map(poly => ({
         ...poly,
         points: poly.points.map(p => rescalePoint(p, scaleX, scaleY)),
-        // canvasPts are canvas-space, they don't need rescaling
       })),
-      // Also rescale in-progress points
-      current: prev.current, // canvas coords, no change needed
+      current: prev.current,
     }));
 
-    // Rescale people lines
     setPeopleState(prev => ({
       ...prev,
       lines: prev.lines.map(line => {
         if (!line) return line;
-        return {
-          ...line,
-          pts: line.pts.map(p => rescalePeoplePoint(p, scaleX, scaleY)),
-        };
+        return { ...line, pts: line.pts.map(p => rescalePeoplePoint(p, scaleX, scaleY)) };
       }),
       currentPts: prev.currentPts.map(p => rescalePeoplePoint(p, scaleX, scaleY)),
     }));
 
-    // Update dimension state and prev ref
     if (axis === 'width')  setImgNatW(val);
     if (axis === 'height') setImgNatH(val);
     prevDims.current = { w: newW, h: newH };
-
     redraw();
   }
 
-  // ── ROI ─────────────────────────────────────────────────────────────────────
   function roiAddPoint(cx, cy) {
     setRoiState(prev => {
       const pts = prev.current;
@@ -178,7 +162,6 @@ export default function ZoneDrawingTool() {
     setRoiState(prev => ({ ...prev, polygons: prev.polygons.filter(p => p.id !== id) }));
   }
 
-  // ── People ──────────────────────────────────────────────────────────────────
   function peopleAddPoint(cx, cy, canvas) {
     const W  = canvas?.width  ?? imgNatW;
     const H  = canvas?.height ?? imgNatH;
@@ -198,7 +181,6 @@ export default function ZoneDrawingTool() {
     });
   }
 
-  // ── Unified handlers ────────────────────────────────────────────────────────
   function handleCanvasClick(e, pos, canvas) {
     if (e.ctrlKey) { handleFinish(canvas); return; }
     if (mode === 'roi') roiAddPoint(pos.cx, pos.cy);
@@ -266,6 +248,7 @@ export default function ZoneDrawingTool() {
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         px: { xs: 2, sm: 0 }, py: { xs: 1.5, sm: 0 }, mb: { xs: 0, sm: 2 },
       }}>
+        {/* Logo + title */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
           <Box sx={{ position: 'relative', width: 28, height: 28, flexShrink: 0 }}>
             <Box sx={{
@@ -290,19 +273,24 @@ export default function ZoneDrawingTool() {
           </Box>
         </Box>
 
-        {!isMobile && (
-          <Tooltip title="Enter = close/finish · Esc = cancel · Ctrl+Z = undo" placement="bottom">
-            <Box sx={{
-              display: 'flex', alignItems: 'center', gap: 0.75,
-              border: '1px solid rgba(255,255,255,0.08)',
-              borderRadius: 2, px: 1.25, py: 0.6, cursor: 'default',
-              '&:hover': { borderColor: 'rgba(255,255,255,0.15)' },
-            }}>
-              <KeyboardIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
-              <Typography sx={{ fontSize: '0.68rem', color: 'text.secondary' }}>Shortcuts</Typography>
-            </Box>
-          </Tooltip>
-        )}
+        {/* Right side: shortcuts + dark mode toggle */}
+        <Stack direction="row" spacing={1} alignItems="center">
+          {!isMobile && (
+            <Tooltip title="Enter = close/finish · Esc = cancel · Ctrl+Z = undo" placement="bottom">
+              <Box sx={{
+                display: 'flex', alignItems: 'center', gap: 0.75,
+                border: '1px solid rgba(255,255,255,0.08)',
+                borderRadius: 2, px: 1.25, py: 0.6, cursor: 'default',
+                '&:hover': { borderColor: 'rgba(255,255,255,0.15)' },
+              }}>
+                <KeyboardIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+                <Typography sx={{ fontSize: '0.68rem', color: 'text.secondary' }}>Shortcuts</Typography>
+              </Box>
+            </Tooltip>
+          )}
+
+          <DarkModeToggle darkMode={darkMode} onToggle={onToggleDarkMode} />
+        </Stack>
       </Box>
 
       {/* Card */}
@@ -323,8 +311,8 @@ export default function ZoneDrawingTool() {
           flexWrap: 'wrap', gap: 1,
         }}>
           <Stack direction="row" spacing={0.75}>
-            <ModeButton id="roi"    label="ROI Zones"    Icon={GestureIcon}            active={mode==='roi'}    onClick={setMode} />
-            <ModeButton id="people" label="People Count" Icon={PeopleAltOutlinedIcon}  active={mode==='people'} onClick={setMode} />
+            <ModeButton id="roi"    label="ROI Zones"    Icon={GestureIcon}           active={mode==='roi'}    onClick={setMode} />
+            <ModeButton id="people" label="People Count" Icon={PeopleAltOutlinedIcon} active={mode==='people'} onClick={setMode} />
           </Stack>
           <Stack direction="row" spacing={1}>
             <Tooltip title="Undo last point (Ctrl+Z)" placement="bottom">
@@ -404,5 +392,34 @@ export default function ZoneDrawingTool() {
         </Alert>
       </Snackbar>
     </Box>
+  );
+}
+
+// ── Outer wrapper: owns darkMode state + ThemeProvider ───────────────────────
+export default function ZoneDrawingTool() {
+  const [darkMode, setDarkMode] = useState(true);
+
+  const theme = useMemo(() => createTheme({
+    palette: {
+      mode: darkMode ? 'dark' : 'light',
+      primary:   { main: '#00e676' },
+      secondary: { main: '#448aff' },
+      ...(darkMode ? {
+        background: { default: '#0d0d0d', paper: '#141414' },
+      } : {
+        background: { default: '#f4f6f8', paper: '#ffffff' },
+      }),
+    },
+    shape: { borderRadius: 8 },
+  }), [darkMode]);
+
+  return (
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <ZoneDrawingToolInner
+        darkMode={darkMode}
+        onToggleDarkMode={() => setDarkMode(d => !d)}
+      />
+    </ThemeProvider>
   );
 }
